@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 // Bắt đầu ứng dụng Flutter
 void main() {
@@ -573,6 +577,129 @@ class OrderDetailScreen extends StatelessWidget {
 
   const OrderDetailScreen({super.key, required this.order});
 
+  // TÍNH NĂNG MỚI: Hàm tạo và in PDF
+  Future<void> _generateAndPrintPdf(BuildContext context) async {
+    // Hiển thị loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final doc = pw.Document();
+
+    // Tải font chữ đã thêm vào assets
+    final fontData = await rootBundle.load("assets/fonts/Roboto-Regular.ttf");
+    final ttf = pw.Font.ttf(fontData);
+    final boldFontData = await rootBundle.load("assets/fonts/Roboto-Bold.ttf");
+    final boldTtf = pw.Font.ttf(boldFontData);
+
+    // Định nghĩa các kiểu chữ
+    final baseStyle = pw.TextStyle(font: ttf, fontSize: 11);
+    final boldStyle = pw.TextStyle(font: boldTtf, fontSize: 11);
+    final titleStyle = pw.TextStyle(font: boldTtf, fontSize: 18);
+
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        build: (pw.Context context) {
+          return [
+            pw.Header(
+              level: 0,
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('Hóa Đơn Bán Lẻ', style: titleStyle),
+                  pw.Text('Ngày: ${DateFormat('dd/MM/yyyy').format(order.deliveryDate)}', style: baseStyle),
+                ],
+              ),
+            ),
+            pw.Divider(),
+            pw.SizedBox(height: 20),
+            pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Expanded(
+                  flex: 2,
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text('Mã đơn hàng:', style: boldStyle),
+                      pw.Text(order.id.substring(0, 8), style: baseStyle),
+                      pw.SizedBox(height: 10),
+                      pw.Text('Khách hàng:', style: boldStyle),
+                      pw.Text(order.customerName, style: baseStyle),
+                      pw.SizedBox(height: 10),
+                      pw.Text('Số điện thoại:', style: boldStyle),
+                      pw.Text(order.phoneNumber, style: baseStyle),
+                    ],
+                  ),
+                ),
+                pw.Expanded(
+                  flex: 3,
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text('Địa chỉ giao hàng:', style: boldStyle),
+                      pw.Text(order.address, style: baseStyle),
+                      pw.SizedBox(height: 10),
+                      pw.Text('Phương thức thanh toán:', style: boldStyle),
+                      pw.Text(order.paymentMethod, style: baseStyle),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 30),
+            // Bảng danh sách sản phẩm
+            pw.Table.fromTextArray(
+              headers: ['STT', 'Tên sản phẩm', 'Đơn giá'],
+              data: List<List<String>>.generate(
+                order.products.length,
+                (index) => [
+                  (index + 1).toString(),
+                  order.products[index].name,
+                  NumberFormat.currency(locale: 'vi_VN', symbol: '₫').format(order.products[index].price),
+                ],
+              ),
+              headerStyle: boldStyle,
+              cellStyle: baseStyle,
+              headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+              cellAlignments: {
+                0: pw.Alignment.center,
+                1: pw.Alignment.centerLeft,
+                2: pw.Alignment.centerRight,
+              },
+              border: pw.TableBorder.all(),
+            ),
+            pw.SizedBox(height: 20),
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.end,
+              children: [
+                pw.Text('Tổng cộng: ', style: pw.TextStyle(font: boldTtf, fontSize: 14)),
+                pw.Text(
+                  NumberFormat.currency(locale: 'vi_VN', symbol: '₫').format(order.products.fold<double>(0, (sum, item) => sum + item.price)),
+                  style: pw.TextStyle(font: boldTtf, fontSize: 14),
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 40),
+            pw.Text('Cảm ơn quý khách!', style: baseStyle),
+          ];
+        },
+      ),
+    );
+
+    // Ẩn loading indicator
+    Navigator.of(context, rootNavigator: true).pop();
+
+    // Dùng thư viện printing để hiển thị giao diện In/Lưu/Chia sẻ file PDF
+    await Printing.layoutPdf(
+      onLayout: (PdfPageFormat format) async => doc.save(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -664,6 +791,12 @@ class OrderDetailScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+      // THÊM NÚT IN/XUẤT PDF
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _generateAndPrintPdf(context),
+        tooltip: 'In/Xuất PDF',
+        child: const Icon(Icons.print_outlined),
       ),
     );
   }
