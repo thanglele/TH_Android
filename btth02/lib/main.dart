@@ -3,25 +3,41 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+
+// Thư viện cho PDF và in ấn
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
+// Thư viện cho SQLite
+import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart' as p;
+
 // Bắt đầu ứng dụng Flutter
 void main() {
+  // Đảm bảo Flutter binding đã được khởi tạo trước khi thao tác với database
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const OrderManagementApp());
 }
 
-// Model cho Sản phẩm
+// --- MODELS ---
 class Product {
   final String id;
   final String name;
   final double price;
 
   Product({required this.id, required this.name, required this.price});
+  
+  // Dùng để chuyển đổi từ Map đọc từ DB
+  factory Product.fromMap(Map<String, dynamic> map) {
+    return Product(
+      id: map['id'],
+      name: map['name'],
+      price: map['price'],
+    );
+  }
 }
 
-// Model cho Đơn hàng
 class Order {
   String id;
   String customerName;
@@ -42,9 +58,123 @@ class Order {
     required this.paymentMethod,
     required this.products,
   });
+
+  // Dùng để chuyển đổi object thành Map để ghi vào DB
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'customerName': customerName,
+      'phoneNumber': phoneNumber,
+      'address': address,
+      'note': note,
+      'deliveryDate': deliveryDate.toIso8601String(),
+      'paymentMethod': paymentMethod,
+    };
+  }
 }
 
-// Widget gốc của ứng dụng
+// --- DATABASE HELPER ---
+class DatabaseHelper {
+  static final DatabaseHelper instance = DatabaseHelper._init();
+  static Database? _database;
+  DatabaseHelper._init();
+
+  Future<Database> get database async {
+    if (_database != null) return _database!;
+    _database = await _initDB('orders.db');
+    return _database!;
+  }
+
+  Future<Database> _initDB(String filePath) async {
+    final dbPath = await getDatabasesPath();
+    final path = p.join(dbPath, filePath);
+    return await openDatabase(path, version: 1, onCreate: _createDB);
+  }
+
+  Future _createDB(Database db, int version) async {
+    await db.execute('''
+      CREATE TABLE orders (
+        id TEXT PRIMARY KEY,
+        customerName TEXT NOT NULL,
+        phoneNumber TEXT NOT NULL,
+        address TEXT NOT NULL,
+        note TEXT,
+        deliveryDate TEXT NOT NULL,
+        paymentMethod TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE order_products (
+        orderId TEXT NOT NULL,
+        productId TEXT NOT NULL,
+        FOREIGN KEY (orderId) REFERENCES orders (id) ON DELETE CASCADE
+      )
+    ''');
+  }
+
+  Future<void> insertOrder(Order order) async {
+    final db = await instance.database;
+    await db.transaction((txn) async {
+      await txn.insert('orders', order.toMap());
+      for (var product in order.products) {
+        await txn.insert('order_products', {'orderId': order.id, 'productId': product.id});
+      }
+    });
+  }
+
+  Future<void> updateOrder(Order order) async {
+    final db = await instance.database;
+    await db.transaction((txn) async {
+      await txn.update('orders', order.toMap(), where: 'id = ?', whereArgs: [order.id]);
+      await txn.delete('order_products', where: 'orderId = ?', whereArgs: [order.id]);
+      for (var product in order.products) {
+        await txn.insert('order_products', {'orderId': order.id, 'productId': product.id});
+      }
+    });
+  }
+
+  Future<List<Order>> getOrders(List<Product> availableProducts) async {
+    final db = await instance.database;
+    final orderMaps = await db.query('orders', orderBy: 'deliveryDate DESC');
+    
+    List<Order> orders = [];
+    for (var orderMap in orderMaps) {
+      final productMaps = await db.query('order_products', where: 'orderId = ?', whereArgs: [orderMap['id']]);
+      List<Product> products = [];
+      for (var pMap in productMaps) {
+        // Tìm sản phẩm đầy đủ từ danh sách có sẵn dựa trên ID
+        final product = availableProducts.firstWhere((p) => p.id == pMap['productId']);
+        products.add(product);
+      }
+
+      orders.add(Order(
+        id: orderMap['id'] as String,
+        customerName: orderMap['customerName'] as String,
+        phoneNumber: orderMap['phoneNumber'] as String,
+        address: orderMap['address'] as String,
+        note: orderMap['note'] as String?,
+        deliveryDate: DateTime.parse(orderMap['deliveryDate'] as String),
+        paymentMethod: orderMap['paymentMethod'] as String,
+        products: products,
+      ));
+    }
+    return orders;
+  }
+
+  Future<void> deleteOrder(String id) async {
+    final db = await instance.database;
+    await db.delete('orders', where: 'id = ?', whereArgs: [id]);
+    // Do có ON DELETE CASCADE, các dòng trong order_products cũng sẽ tự động bị xóa.
+  }
+
+  Future close() async {
+    final db = await instance.database;
+    db.close();
+  }
+}
+
+// --- UI WIDGETS ---
 class OrderManagementApp extends StatelessWidget {
   const OrderManagementApp({super.key});
 
@@ -112,7 +242,6 @@ class OrderManagementApp extends StatelessWidget {
   }
 }
 
-// Màn hình chính: Danh sách đơn hàng
 class OrderListPage extends StatefulWidget {
   const OrderListPage({super.key});
 
@@ -121,9 +250,7 @@ class OrderListPage extends StatefulWidget {
 }
 
 class _OrderListPageState extends State<OrderListPage> {
-  // --- Dữ liệu giả lập ---
-  // Trong ứng dụng thực tế, dữ liệu này sẽ được load từ SQLite hoặc SharedPreferences
-  final List<Order> _orders = [];
+  // Dữ liệu sản phẩm có sẵn (trong ứng dụng thực tế có thể load từ DB hoặc API)
   final List<Product> _availableProducts = [
     Product(id: 'p1', name: 'Laptop Pro Max', price: 35000000),
     Product(id: 'p2', name: 'Smartphone Galaxy S25', price: 28000000),
@@ -132,7 +259,20 @@ class _OrderListPageState extends State<OrderListPage> {
     Product(id: 'p5', name: 'Bàn phím cơ Tenkeyless', price: 2100000),
   ];
   
-  // Điều hướng đến màn hình Form để tạo/sửa đơn hàng
+  late Future<List<Order>> _ordersFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshOrders();
+  }
+
+  void _refreshOrders() {
+    setState(() {
+      _ordersFuture = DatabaseHelper.instance.getOrders(_availableProducts);
+    });
+  }
+
   void _navigateToOrderForm({Order? order}) async {
     final result = await Navigator.push(
       context,
@@ -145,22 +285,15 @@ class _OrderListPageState extends State<OrderListPage> {
     );
 
     if (result != null && result is Order) {
-      setState(() {
-        if (order != null) {
-          // Cập nhật đơn hàng đã có
-          final index = _orders.indexWhere((o) => o.id == result.id);
-          if (index != -1) {
-            _orders[index] = result;
-          }
-        } else {
-          // Thêm đơn hàng mới
-          _orders.insert(0, result);
-        }
-      });
+      if (order != null) {
+        await DatabaseHelper.instance.updateOrder(result);
+      } else {
+        await DatabaseHelper.instance.insertOrder(result);
+      }
+      _refreshOrders();
     }
   }
   
-  // Điều hướng đến màn hình chi tiết
   void _navigateToOrderDetail(Order order) async {
      final action = await Navigator.push(
       context,
@@ -170,33 +303,28 @@ class _OrderListPageState extends State<OrderListPage> {
     );
 
     if (action == 'delete') {
-      _deleteOrder(order);
+      _deleteOrderWithConfirmation(order);
     } else if (action is Order) {
        _navigateToOrderForm(order: action);
     }
   }
 
-  // Xoá đơn hàng
-  void _deleteOrder(Order order) {
+  void _deleteOrderWithConfirmation(Order order) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Xác nhận xoá'),
         content: Text('Bạn có chắc muốn xoá đơn hàng của khách "${order.customerName}" không?'),
         actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Huỷ')),
           TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Huỷ'),
-          ),
-          TextButton(
-            onPressed: () {
-              setState(() {
-                _orders.removeWhere((o) => o.id == order.id);
-              });
+            onPressed: () async {
               Navigator.of(ctx).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
+              await DatabaseHelper.instance.deleteOrder(order.id);
+               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Đã xoá đơn hàng thành công!'), backgroundColor: Colors.green),
               );
+              _refreshOrders();
             },
             child: const Text('Xoá', style: TextStyle(color: Colors.red)),
           ),
@@ -211,27 +339,33 @@ class _OrderListPageState extends State<OrderListPage> {
       appBar: AppBar(
         title: const Text('Danh sách Đơn hàng'),
       ),
-      body: _orders.isEmpty
-          ? Center(
+      body: FutureBuilder<List<Order>>(
+        future: _ordersFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          } else if (snapshot.hasError) {
+            return Center(child: Text('Đã có lỗi xảy ra: ${snapshot.error}'));
+          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.inbox_outlined, size: 80, color: Colors.grey[400]),
                   const SizedBox(height: 16),
-                  Text(
-                    'Chưa có đơn hàng nào',
-                    style: TextStyle(fontSize: 18, color: Colors.grey[600]),
-                  ),
+                  Text('Chưa có đơn hàng nào', style: TextStyle(fontSize: 18, color: Colors.grey[600])),
                   const SizedBox(height: 8),
                   const Text('Nhấn nút + để tạo đơn hàng mới.'),
                 ],
               ),
-            )
-          : ListView.builder(
+            );
+          } else {
+            final orders = snapshot.data!;
+            return ListView.builder(
               padding: const EdgeInsets.all(8.0),
-              itemCount: _orders.length,
+              itemCount: orders.length,
               itemBuilder: (context, index) {
-                final order = _orders[index];
+                final order = orders[index];
                 return Card(
                   child: ListTile(
                     leading: CircleAvatar(
@@ -243,13 +377,16 @@ class _OrderListPageState extends State<OrderListPage> {
                     isThreeLine: true,
                     trailing: IconButton(
                       icon: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
-                      onPressed: () => _deleteOrder(order),
+                      onPressed: () => _deleteOrderWithConfirmation(order),
                     ),
                     onTap: () => _navigateToOrderDetail(order),
                   ),
                 );
               },
-            ),
+            );
+          }
+        },
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _navigateToOrderForm(),
         tooltip: 'Tạo đơn hàng mới',
@@ -258,6 +395,8 @@ class _OrderListPageState extends State<OrderListPage> {
     );
   }
 }
+
+// ... Các màn hình OrderFormScreen và OrderDetailScreen giữ nguyên như cũ ...
 
 // Màn hình 2: Form tạo/chỉnh sửa đơn hàng
 class OrderFormScreen extends StatefulWidget {

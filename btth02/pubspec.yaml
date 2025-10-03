@@ -38,6 +38,8 @@ dependencies:
   uuid: ^4.3.3 # Để tạo mã đơn hàng duy nhất
   pdf: ^3.10.8
   printing: ^5.11.1
+  sqflite: ^2.3.2
+  path_provider: ^2.1.2
   flutter_localizations: # Hỗ trợ DatePicker tiếng Việt
     sdk: flutter
 
