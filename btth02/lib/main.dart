@@ -396,8 +396,6 @@ class _OrderListPageState extends State<OrderListPage> {
   }
 }
 
-// ... Các màn hình OrderFormScreen và OrderDetailScreen giữ nguyên như cũ ...
-
 // Màn hình 2: Form tạo/chỉnh sửa đơn hàng
 class OrderFormScreen extends StatefulWidget {
   final Order? order;

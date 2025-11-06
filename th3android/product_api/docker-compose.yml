@@ -1,0 +1,45 @@
+services:
+  app:
+    image: laravelsail/php82-composer
+    container_name: laravel_lab
+    restart: unless-stopped
+    command: sleep infinity
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_CONNECTION=mysql
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_DATABASE=laravel
+      - DB_USERNAME=laraveluser
+      - DB_PASSWORD=your_password
+    volumes:
+      - laravel_code:/var/www/html
+    working_dir: /var/www/html
+    networks:
+      - laravel-network
+    depends_on:
+      - db
+
+  # service 'db' giữ nguyên
+  db:
+    image: mysql:8.0
+    container_name: laravel_db
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_DATABASE: laravel
+      MYSQL_USER: laraveluser
+      MYSQL_PASSWORD: your_password
+      MYSQL_ROOT_PASSWORD: your_root_password
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - laravel-network
+
+volumes:
+  laravel_code:
+  db_data:
+
+networks:
+  laravel-network:

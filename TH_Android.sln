@@ -1,0 +1,29 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "th3android", "th3android", "{CC257A93-9B5B-4B4B-104B-0B712FA0D5AE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "product_api", "th3android\product_api\product_api.csproj", "{C33D1519-D127-F3CF-49F5-8B03010767F1}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{C33D1519-D127-F3CF-49F5-8B03010767F1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C33D1519-D127-F3CF-49F5-8B03010767F1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C33D1519-D127-F3CF-49F5-8B03010767F1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C33D1519-D127-F3CF-49F5-8B03010767F1}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{C33D1519-D127-F3CF-49F5-8B03010767F1} = {CC257A93-9B5B-4B4B-104B-0B712FA0D5AE}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {8CCD3923-3B51-4C50-B116-E65AD2CABC3B}
+	EndGlobalSection
+EndGlobal
